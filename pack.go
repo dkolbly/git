@@ -153,7 +153,15 @@ func (po *PackedObject) Payload() ([]byte, error) {
 			panic("not a real offset")
 		}
 	}
-	return buf, err
+
+	// a bit inefficient in the common case; we are copying the payload bytes
+	// around... it'd be better to let read() insert the preamble, at least
+	// in the no-delta case
+	preamble := fmt.Sprintf("%s %d\x00", po.typecode.String(), po.size)
+	out := make([]byte, len(preamble)+len(buf))
+	copy(out[0:len(preamble)], []byte(preamble))
+	copy(out[len(preamble):], buf)
+	return out, err
 }
 
 var ErrDeltaMismatch = errors.New("expanded delta name mismatch")
