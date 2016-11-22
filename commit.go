@@ -65,12 +65,12 @@ func (g *Git) loadCommit(name *Ptr, buf []byte) (*Commit, error) {
 			break
 		}
 		k := bytes.IndexByte(line, ' ')
-		fmt.Printf("%q %d\n", line, k)
+		//fmt.Printf("%q %d\n", line, k)
 		if k < 0 {
 			break
 		}
 		rest := line[k+1 : len(line)-1]
-		fmt.Printf("[%s] %q\n", string(line[:k]), rest)
+		//fmt.Printf("[%s] %q\n", string(line[:k]), rest)
 		switch string(line[:k]) {
 		case "tree":
 			ref, err := g.ExpandRef(string(rest))
@@ -90,19 +90,19 @@ func (g *Git) loadCommit(name *Ptr, buf []byte) (*Commit, error) {
 				panic(err)
 			}
 			c.Author = s
-			fmt.Printf("author %s\n", s)
+			//fmt.Printf("author %s\n", s)
 		case "committer":
 			s, err := parseStamp(rest)
 			if err != nil {
 				panic(err)
 			}
 			c.Committer = s
-			fmt.Printf("commiter %s\n", s)
+			//fmt.Printf("commiter %s\n", s)
 		}
 	}
 	c.Message = r.String()
-	fmt.Printf("message %q\n", c.Message)
-	fmt.Printf("***\n%#v\n", c)
+	//fmt.Printf("message %q\n", c.Message)
+	//fmt.Printf("***\n%#v\n", c)
 	return c, nil
 }
 
@@ -110,7 +110,7 @@ var stampPat = regexp.MustCompile(`(.*)\s+<([^>]+)> (\d+) ([+-]?[0-9]+)`)
 
 func parseStamp(buf []byte) (*Stamp, error) {
 	sub := stampPat.FindStringSubmatch(string(buf))
-	fmt.Printf("%q --> %#v\n", buf, sub)
+	//fmt.Printf("%q --> %#v\n", buf, sub)
 
 	timeSec, err := strconv.ParseInt(sub[3], 10, 63)
 	if err != nil {

@@ -52,13 +52,6 @@ func (p *PackedObject) Load() (GitObject, error) {
 		return nil, err
 	}
 	return p.container.repo.loadInterp(&p.name, p.typecode, buf)
-	/*
-		switch p.typecode {
-		case ObjTree:
-			return p.container.repo.loadTree(&p.name, buf)
-		default:
-			return nil, ErrUnknownObjectType
-		}*/
 }
 
 var ErrUnknownObjectType = errors.New("unknown object type")
@@ -88,12 +81,12 @@ func (p *PackFile) newPackedObject(obj *Ptr, at int64) (*PackedObject, error) {
 	size = uint64(header[0] & 0xf)
 	i := 0
 	shift := uint(4)
-	fmt.Printf("at %d, size=%d\n", i, size)
+	//fmt.Printf("at %d, size=%d\n", i, size)
 	for (header[i] & 0x80) != 0 {
 		i++
 		size += uint64(header[i]&0x7f) << shift
 		shift += 7
-		fmt.Printf("at %d, size=%d\n", i, size)
+		//fmt.Printf("at %d, size=%d\n", i, size)
 	}
 
 	return &PackedObject{
@@ -129,7 +122,7 @@ func decodeOffsetDelta(chunk []byte) (int64, []byte) {
 func (po *PackedObject) Payload() ([]byte, error) {
 	buf, base, err := po.read()
 	if base != nil {
-		fmt.Printf("base is: %#v\n", base)
+		//fmt.Printf("base is: %#v\n", base)
 		if base.offset == 0 {
 			panic("we only handle offset deltas so far")
 		}
@@ -141,7 +134,7 @@ func (po *PackedObject) Payload() ([]byte, error) {
 			}
 			baseData, err := baseObj.Payload()
 			if err != nil {
-				fmt.Printf("Could not read base object %s!\n", &baseObj.name)
+				//fmt.Printf("Could not read base object %s!\n", &baseObj.name)
 				return nil, err
 			}
 			data, ptr, err := patchDelta(baseObj.Type(), baseData, buf)
@@ -149,7 +142,7 @@ func (po *PackedObject) Payload() ([]byte, error) {
 				return nil, err
 			}
 
-			fmt.Printf("patched as %s  name is %s\n", ptr, &po.name)
+			//fmt.Printf("patched as %s  name is %s\n", ptr, &po.name)
 			// make sure the hash of the result of applying the delta
 			// is what we expect
 			if !ptr.Equals(&po.name) {
@@ -175,21 +168,21 @@ func (po *PackedObject) read() ([]byte, *BaseSpec, error) {
 
 	data := po.container.data
 	data.Seek(po.offset+int64(po.headerlen), 0)
-	fmt.Printf("<%s>\noffset = %d  headerlen = %d  size = %d  type=%s\n",
-		&po.name,
-		po.offset,
-		po.headerlen,
-		po.size,
-		po.typecode)
+	/*fmt.Printf("<%s>\noffset = %d  headerlen = %d  size = %d  type=%s\n",
+	&po.name,
+	po.offset,
+	po.headerlen,
+	po.size,
+	po.typecode)*/
 	var chunk [10]byte
 	n, err := data.Read(chunk[:])
 	h := chunk[:n]
 
 	if po.typecode == ObjOffsetDelta {
 		delta_rel_offset, h2 := decodeOffsetDelta(h)
-		fmt.Printf("offset delta %d   ; implies offset @%d\n",
-			delta_rel_offset,
-			po.offset-delta_rel_offset)
+		/*fmt.Printf("offset delta %d   ; implies offset @%d\n",
+		delta_rel_offset,
+		po.offset-delta_rel_offset)*/
 		h = h2
 		base = &BaseSpec{
 			offset: po.offset - delta_rel_offset,
@@ -203,10 +196,10 @@ func (po *PackedObject) read() ([]byte, *BaseSpec, error) {
 	}
 	defer rc.Close()
 
-	fmt.Printf("Trying to read %d bytes\n", po.size)
+	//fmt.Printf("Trying to read %d bytes\n", po.size)
 	buf := make([]byte, po.size)
 	num, err := rc.Read(buf)
-	fmt.Printf("Read %d with error: %s\n", num, err)
+	//fmt.Printf("Read %d with error: %s\n", num, err)
 	if err != nil {
 		if err != io.EOF || num != len(buf) {
 			return nil, base, err
@@ -278,8 +271,8 @@ func readRaw(dest memBlock, nbytes int, src *os.File) (int, error) {
 	}
 	hdr.Len = nbytes
 	hdr.Cap = nbytes
-	at, _ := src.Seek(0, 1)
-	fmt.Printf("Reading %d bytes at +%d...\n", nbytes, at)
+	/*at, _ := src.Seek(0, 1)
+	fmt.Printf("Reading %d bytes at +%d...\n", nbytes, at)*/
 	return src.Read(raw)
 }
 

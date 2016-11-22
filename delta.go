@@ -36,7 +36,7 @@ func patchDelta(mode ObjType, base, delta []byte) ([]byte, *Ptr, error) {
 
 	check := sha1.New()
 
-	fmt.Printf("    %d byte base, %d byte result, type %s\n", baseSize, resultSize, mode)
+	//fmt.Printf("    %d byte base, %d byte result, type %s\n", baseSize, resultSize, mode)
 
 	fmt.Fprintf(check, "%s %d", mode, resultSize)
 	check.Write([]byte{0})
@@ -87,8 +87,11 @@ func patchDelta(mode ObjType, base, delta []byte) ([]byte, *Ptr, error) {
 				// default to a 64K chunk
 				copySize = 0x10000
 			}
-			fmt.Printf("    copy from base: %d bytes from offset %d\n%x\n",
-				copySize, copyOffset, base[copyOffset:copyOffset+copySize])
+			/*fmt.Printf("    copy from base: %d bytes from offset %d\n%x\n",
+			copySize,
+			copyOffset,
+			base[copyOffset:copyOffset+copySize])*/
+
 			copy(result[j:j+copySize], base[copyOffset:])
 			check.Write(base[copyOffset : copyOffset+copySize])
 
@@ -103,8 +106,8 @@ func patchDelta(mode ObjType, base, delta []byte) ([]byte, *Ptr, error) {
 			}
 			copy(result[j:j+copySize], delta[i:])
 			check.Write(delta[i : i+copySize])
-			fmt.Printf("    copy from delta: %d bytes from offset %d\n%x\n",
-				cmd, i, delta[i:i+copySize])
+			/*fmt.Printf("    copy from delta: %d bytes from offset %d\n%x\n",
+			cmd, i, delta[i:i+copySize])*/
 
 			i += copySize
 			j += copySize
@@ -114,7 +117,7 @@ func patchDelta(mode ObjType, base, delta []byte) ([]byte, *Ptr, error) {
 		}
 	}
 	if j != resultSize {
-		fmt.Printf("didn't seem to write it all??\n")
+		panic("didn't seem to write it all")
 	}
 	var p Ptr
 	copy(p.hash[:], check.Sum(nil))

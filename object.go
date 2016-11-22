@@ -83,9 +83,11 @@ func (p *Ptr) Equals(q *Ptr) bool {
 func ParsePtr(s string) (p Ptr, ok bool) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
+		//fmt.Printf("Denied %s\n", err)
 		return
 	}
 	if len(buf) != 20 {
+		//fmt.Printf("len is %d\n", len(buf))
 		return
 	}
 	ok = true
@@ -109,6 +111,8 @@ func objParse(hexref string) (ret Ptr, ok bool) {
 	ok = true
 	return
 }
+
+// what does this do exactly?
 
 func (g *Git) ExpandRef(ref string) (*Ptr, error) {
 	z, err := hex.DecodeString(ref)
@@ -145,6 +149,8 @@ func (g *Git) loadInterp(n *Ptr, t ObjType, data []byte) (GitObject, error) {
 		return g.loadTree(n, data)
 	case ObjCommit:
 		return g.loadCommit(n, data)
+	case ObjBlob:
+		return g.loadBlob(n, data)
 	default:
 		return nil, ErrUnknownObjectType
 	}
