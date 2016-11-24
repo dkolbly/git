@@ -70,7 +70,7 @@ func (g *Git) loadCommit(name *Ptr, buf []byte) (*Commit, error) {
 			break
 		}
 		rest := line[k+1 : len(line)-1]
-		//fmt.Printf("[%s] %q\n", string(line[:k]), rest)
+		fmt.Printf("[%s] %q\n", string(line[:k]), rest)
 		switch string(line[:k]) {
 		case "tree":
 			ref, err := g.ExpandRef(string(rest))

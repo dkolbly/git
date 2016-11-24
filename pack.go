@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 )
 
 type PackFile struct {
@@ -24,6 +23,11 @@ type PackFile struct {
 	indexCRCs        []uint32
 	crossRef         map[uint32]int
 	data             *os.File
+	cache            map[int64]*PackedObject
+}
+
+func (p *PackFile) GetNamed(RefType, string) *NamedRef {
+	return nil
 }
 
 func (p *PackFile) open() (*os.File, error) {
@@ -38,25 +42,31 @@ func (p *PackFile) open() (*os.File, error) {
 }
 
 type PackedObject struct {
-	name      Ptr
-	container *PackFile
-	offset    int64
-	size      int64
-	typecode  ObjType
-	headerlen uint8
+	name        Ptr
+	container   *PackFile
+	offset      int64
+	size        int64
+	typecode    ObjType
+	headerlen   uint8
+	dedeltatype ObjType
+	dedelta     []byte
 }
 
-func (p *PackedObject) Load() (GitObject, error) {
-	buf, err := p.Payload()
+func (po *PackedObject) Load() (GitObject, error) {
+	buf, t, err := po.deDeltaifiedBytes(0)
 	if err != nil {
 		return nil, err
 	}
-	return p.container.repo.loadInterp(&p.name, p.typecode, buf)
+	return po.container.repo.Interpret(&po.name, t, buf)
 }
 
 var ErrUnknownObjectType = errors.New("unknown object type")
 
 func (p *PackFile) newPackedObject(obj *Ptr, at int64) (*PackedObject, error) {
+
+	if p.cache[at] != nil {
+		return p.cache[at], nil
+	}
 
 	data, err := p.open()
 	if err != nil {
@@ -89,14 +99,17 @@ func (p *PackFile) newPackedObject(obj *Ptr, at int64) (*PackedObject, error) {
 		//fmt.Printf("at %d, size=%d\n", i, size)
 	}
 
-	return &PackedObject{
-		name:      *obj,
-		container: p,
-		offset:    at,
-		size:      int64(size),
-		typecode:  ObjType(typeCode),
-		headerlen: uint8(i + 1),
-	}, nil
+	po := &PackedObject{
+		name:        *obj,
+		container:   p,
+		offset:      at,
+		size:        int64(size),
+		typecode:    ObjType(typeCode),
+		headerlen:   uint8(i + 1),
+		dedeltatype: ObjNone,
+	}
+	p.cache[at] = po
+	return po, nil
 }
 
 func (po *PackedObject) Name() *Ptr {
@@ -120,48 +133,70 @@ func decodeOffsetDelta(chunk []byte) (int64, []byte) {
 }
 
 func (po *PackedObject) Payload() ([]byte, error) {
-	buf, base, err := po.read()
-	if base != nil {
-		//fmt.Printf("base is: %#v\n", base)
-		if base.offset == 0 {
-			panic("we only handle offset deltas so far")
-		}
-		p := po.container
-		if i, ok := p.crossRef[uint32(base.offset)]; ok {
-			baseObj, err := p.newPackedObject(&(p.indexContents[i]), base.offset)
-			if err != nil {
-				return nil, err
-			}
-			baseData, err := baseObj.Payload()
-			if err != nil {
-				//fmt.Printf("Could not read base object %s!\n", &baseObj.name)
-				return nil, err
-			}
-			data, ptr, err := patchDelta(baseObj.Type(), baseData, buf)
-			if err != nil {
-				return nil, err
-			}
-
-			//fmt.Printf("patched as %s  name is %s\n", ptr, &po.name)
-			// make sure the hash of the result of applying the delta
-			// is what we expect
-			if !ptr.Equals(&po.name) {
-				return nil, ErrDeltaMismatch
-			}
-			return data, err
-		} else {
-			panic("not a real offset")
-		}
+	//log.Info("Want Payload(%s)", &po.name)
+	buf, t, err := po.deDeltaifiedBytes(0)
+	if err != nil {
+		return nil, err
 	}
 
 	// a bit inefficient in the common case; we are copying the payload bytes
 	// around... it'd be better to let read() insert the preamble, at least
 	// in the no-delta case
-	preamble := fmt.Sprintf("%s %d\x00", po.typecode.String(), po.size)
+	preamble := fmt.Sprintf("%s %d\x00", t, len(buf))
+	//log.Info("%s preamble => %s", &po.name, preamble)
+
 	out := make([]byte, len(preamble)+len(buf))
 	copy(out[0:len(preamble)], []byte(preamble))
 	copy(out[len(preamble):], buf)
 	return out, err
+}
+
+func (po *PackedObject) deDeltaifiedBytes(depth int) ([]byte, ObjType, error) {
+
+	if po.dedeltatype != ObjNone {
+		return po.dedelta, po.dedeltatype, nil
+	}
+
+	//log.Info("deDelatify[%d](%s)", depth, &po.name)
+	buf, base, err := po.read()
+	if base == nil {
+		//log.Info("   leaf %s : %d bytes", po.typecode, len(buf))
+		po.dedeltatype = po.typecode
+		po.dedelta = buf
+		return buf, po.typecode, err
+	}
+
+	if base.offset == 0 {
+		panic("we only handle offset deltas so far")
+	}
+	p := po.container
+	i, ok := p.crossRef[uint32(base.offset)]
+	if !ok {
+		panic("not a real offset")
+	}
+	baseObj, err := p.newPackedObject(&(p.indexContents[i]), base.offset)
+	if err != nil {
+		return nil, ObjNone, err
+	}
+	baseData, t, err := baseObj.deDeltaifiedBytes(depth + 1)
+	if err != nil {
+		//fmt.Printf("Could not read base object %s!\n", &baseObj.name)
+		return nil, ObjNone, err
+	}
+	data, ptr, err := patchDelta(t, baseData, buf)
+	if err != nil {
+		return nil, ObjNone, err
+	}
+
+	//log.Info("patched into %s (%d bytes)  we want %s", ptr, len(data), &po.name)
+	// make sure the hash of the result of applying the delta
+	// is what we expect
+	if !ptr.Equals(&po.name) {
+		return nil, ObjNone, ErrDeltaMismatch
+	}
+	po.dedeltatype = t
+	po.dedelta = data
+	return data, t, err
 }
 
 var ErrDeltaMismatch = errors.New("expanded delta name mismatch")
@@ -176,7 +211,7 @@ func (po *PackedObject) read() ([]byte, *BaseSpec, error) {
 
 	data := po.container.data
 	data.Seek(po.offset+int64(po.headerlen), 0)
-	/*fmt.Printf("<%s>\noffset = %d  headerlen = %d  size = %d  type=%s\n",
+	/*log.Info("<%s>\noffset = %d  headerlen = %d  size = %d  type=%s",
 	&po.name,
 	po.offset,
 	po.headerlen,
@@ -206,7 +241,7 @@ func (po *PackedObject) read() ([]byte, *BaseSpec, error) {
 
 	//fmt.Printf("Trying to read %d bytes\n", po.size)
 	buf := make([]byte, po.size)
-	num, err := rc.Read(buf)
+	num, err := io.ReadFull(rc, buf)
 	//fmt.Printf("Read %d with error: %s\n", num, err)
 	if err != nil {
 		if err != io.EOF || num != len(buf) {
@@ -327,16 +362,19 @@ func (p *PackFile) loadIndex() error {
 	return nil
 }
 
-func (g *Git) Unpack(s string) (*PackFile, error) {
+func IncludePackFile(g *Git, pack string) (*PackFile, error) {
 	p := &PackFile{
 		repo:  g,
-		Pack:  path.Join(g.Dir, s),
-		Index: path.Join(g.Dir, s[:len(s)-5]+".idx"),
+		Pack:  pack,
+		Index: pack[:len(pack)-5] + ".idx",
+		cache: make(map[int64]*PackedObject),
 	}
 	err := p.loadIndex()
 	if err != nil {
 		return nil, err
 	}
+	log.Info("Including %s with %d items", pack, len(p.indexContents))
+	g.AddStore(p)
 	return p, nil
 }
 

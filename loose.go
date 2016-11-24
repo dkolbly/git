@@ -10,8 +10,19 @@ import (
 	"path"
 )
 
+type GitDir struct {
+	owner *Git
+	Dir   string
+}
+
+func Bare(g *Git, d string) (*GitDir, error) {
+	bare := &GitDir{owner: g, Dir: d}
+	g.AddStore(bare)
+	return bare, nil
+}
+
 type LooseObject struct {
-	repo   *Git
+	repo   *GitDir
 	name   Ptr
 	file   string
 	loaded GitObject
@@ -65,28 +76,10 @@ func (l *LooseObject) Load() (GitObject, error) {
 	// TODO double-check the length
 
 	t := typeFromString[string(buf[:k])]
-	return l.repo.loadInterp(&l.name, t, buf[z+1:])
-	/*
-		switch string(buf[:k]) {
-		case "tree":
-			l.loaded, err = l.repo.loadTree(&l.name, buf[z+1:])
-		default:
-			return nil, ErrUnknownObjectType
-		}
-		return l.loaded, err
-
-	*/
-	//return &ObjFile{raw: rdr, unz: rc}, nil
+	return l.repo.owner.Interpret(&l.name, t, buf[z+1:])
 }
 
-/*func (g *Git) newLoose(p *Ptr) *LooseObject {
-	return &LooseObject{
-		repo: g,
-		name: *p,
-	}
-}*/
-
-func (g *Git) getLoose(p *Ptr) *LooseObject {
+func (g *GitDir) Get(p *Ptr) GitObject {
 	h := hex.EncodeToString(p.hash[:])
 	f := path.Join(g.Dir, "objects", h[:2], h[2:])
 

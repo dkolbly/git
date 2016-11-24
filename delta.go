@@ -7,6 +7,7 @@ import (
 )
 
 func deltaHdrSize(src []byte) (int, []byte) {
+	//log.Info("deltaHdrSize(%x)", src[:5])
 	// pop quiz: how many variable-length size encodings are there in git?
 
 	var size int
@@ -27,10 +28,12 @@ var ErrBadDelta = errors.New("corrupt delta")
 func patchDelta(mode ObjType, base, delta []byte) ([]byte, *Ptr, error) {
 	baseSize, delta := deltaHdrSize(delta)
 	if baseSize != len(base) {
+		log.Error("%s baseSize=%d len(base)=%d", mode, baseSize, len(base))
 		return nil, nil, ErrBadDelta
 	}
 
 	resultSize, delta := deltaHdrSize(delta)
+	//log.Info("%s baseSize=%d len(base)=%d resultSize=%d len(delta)=%d", mode, baseSize, len(base), resultSize, len(delta))
 
 	result := make([]byte, resultSize)
 
@@ -38,6 +41,7 @@ func patchDelta(mode ObjType, base, delta []byte) ([]byte, *Ptr, error) {
 
 	//fmt.Printf("    %d byte base, %d byte result, type %s\n", baseSize, resultSize, mode)
 
+	//log.Info("%s %d", mode, resultSize)
 	fmt.Fprintf(check, "%s %d", mode, resultSize)
 	check.Write([]byte{0})
 
@@ -121,6 +125,11 @@ func patchDelta(mode ObjType, base, delta []byte) ([]byte, *Ptr, error) {
 	}
 	var p Ptr
 	copy(p.hash[:], check.Sum(nil))
+
+	/*f := "/tmp/x-" + ((&p).String())
+	log.Info("Writing %d bytes to %s", len(result), f)
+	ioutil.WriteFile(f, result, 0666)
+	*/
 	return result, &p, nil
 }
 

@@ -143,7 +143,17 @@ func (g *Git) verify(n *Ptr, t ObjType, data []byte) bool {
 	return true
 }
 
-func (g *Git) loadInterp(n *Ptr, t ObjType, data []byte) (GitObject, error) {
+// Interpret decodes the "payload" portion of a git object, given its
+// type and name (hash).  That is, the part that appears after the
+// preamble (the preamble is the object type string, the length, and
+// the NUL byte).  Note that in packfiles, the type and length are
+// encoded elseway, so the payload portion is all that appears.
+// However, the preamble is included in the hash.
+func (g *Git) Interpret(n *Ptr, t ObjType, data []byte) (GitObject, error) {
+	if g == nil {
+		panic("null")
+	}
+
 	switch t {
 	case ObjTree:
 		return g.loadTree(n, data)

@@ -2,6 +2,7 @@ package git
 
 import (
 	"encoding/hex"
+	"errors"
 	"github.com/dkolbly/logging"
 	"io/ioutil"
 	"os"
@@ -9,29 +10,48 @@ import (
 	"strings"
 )
 
+var ErrNoBranch = errors.New("no such branch")
+var ErrNoTag = errors.New("no such tag")
+
 var log = logging.New("git")
 
 type Git struct {
-	Dir   string
-	packs []*PackFile
+	stores []Store
+}
+
+func New() *Git {
+	return &Git{}
+}
+
+func (g *Git) AddStore(s Store) {
+	g.stores = append(g.stores, s)
+}
+
+type Store interface {
+	GetNamed(RefType, string) *NamedRef
+	Get(obj *Ptr) GitObject
+	EnumerateTo(chan<- Ptr)
+}
+
+// optional interface
+type NameEnumerater interface {
+	NameEnumerate(t RefType) ([]NamedRef, error)
 }
 
 func Open(d string) (*Git, error) {
-	g := &Git{
-		Dir: d,
-	}
+	g := &Git{}
+	Bare(g, d)
+
 	lst, err := ioutil.ReadDir(path.Join(d, "objects/pack"))
 
 	if err == nil {
 		for _, f := range lst {
 			if strings.HasSuffix(f.Name(), ".pack") {
-				p, err := g.Unpack(path.Join("objects/pack", f.Name()))
-				if err == nil {
-					//fmt.Printf("  including pack %s\n", f.Name())
-					g.packs = append(g.packs, p)
-				} /*else {
-					fmt.Printf("  %s failed: %s\n", f.Name(), err)
-				}*/
+				pfile := path.Join(d, "objects/pack", f.Name())
+				_, err := IncludePackFile(g, pfile)
+				if err != nil {
+					log.Error("Rats: %s", err)
+				}
 			}
 		}
 	}
@@ -40,27 +60,14 @@ func Open(d string) (*Git, error) {
 }
 
 func (g *Git) Get(p *Ptr) GitObject {
-	// check disk
-	o := g.getLoose(p)
-	if o != nil {
-		return o
-	}
-	// check packs
-	for _, pack := range g.packs {
-		o := pack.Get(p)
+	for _, store := range g.stores {
+		o := store.Get(p)
 		if o != nil {
 			return o
 		}
 	}
 	return nil
 }
-
-/*func (g *Git) Get(p *Ptr) (GitObject, error) {
-	// check disk
-	loose := path.Join(g.Dir, "objects", h[0:2], h[2:])
-	fi, err := os.Stat(
-}
-*/
 
 func (g *Git) Enumerate() <-chan Ptr {
 	ch := make(chan Ptr, 10000)
@@ -72,12 +79,19 @@ func (g *Git) Enumerate() <-chan Ptr {
 func (g *Git) enumerateTo(to chan<- Ptr) {
 	defer close(to)
 
-	// walk the packs
-	for _, pack := range g.packs {
-		for _, item := range pack.indexContents {
-			to <- item
-		}
+	for _, store := range g.stores {
+		store.EnumerateTo(to)
 	}
+}
+
+func (p *PackFile) EnumerateTo(to chan<- Ptr) {
+	for _, item := range p.indexContents {
+		to <- item
+	}
+}
+
+func (g *GitDir) EnumerateTo(to chan<- Ptr) {
+
 	// walk the loose objects
 	f, err := os.Open(path.Join(g.Dir, "objects"))
 	if err != nil {
@@ -116,4 +130,26 @@ func (g *Git) enumerateTo(to chan<- Ptr) {
 			}
 		}
 	}
+}
+
+func (g *Git) enumNamed(t RefType) ([]NamedRef, error) {
+	var lst []NamedRef
+	for _, store := range g.stores {
+		if ne, ok := store.(NameEnumerater); ok {
+			more, err := ne.NameEnumerate(t)
+			if err != nil {
+				return nil, err
+			}
+			lst = append(lst, more...)
+		}
+	}
+	return lst, nil
+}
+
+func (g *Git) Branches() ([]NamedRef, error) {
+	return g.enumNamed(Head)
+}
+
+func (g *Git) Tags() ([]NamedRef, error) {
+	return g.enumNamed(Tag)
 }

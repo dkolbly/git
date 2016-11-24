@@ -122,9 +122,9 @@ func (fs *gitFS) walk(posn string, follow bool) (*Node, error) {
 		if n == nil {
 			return nil, ErrNoEntry
 		}
-		log.Info("%s perm %o", posn, n.Perm)
+		//log.Info("%s perm %o", posn, n.Perm)
 		if !n.IsSymLink() || !follow {
-			log.Info("IsSymLink=%t follow=%t", n.IsSymLink(), follow)
+			//log.Info("IsSymLink=%t follow=%t", n.IsSymLink(), follow)
 			return n, nil
 		}
 		// it's a symbol link and we're in follow mode... keep looking
@@ -210,5 +210,8 @@ func (fs *gitFS) ReadDir(path string) ([]os.FileInfo, error) {
 }
 
 func (t *Tree) VFS() vfs.FileSystem {
+	if t == nil {
+		panic("null")
+	}
 	return &gitFS{t}
 }
